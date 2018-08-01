@@ -247,19 +247,21 @@ def get_invite_response(params):
     print("<=============recv")
     print(r.replace('\r\n', '\n'))
     res= parse_response(r)
-    status = get_status(res[0])
+    headers = res[0]
+    status = get_status(headers)
+    params['Call-ID'] = get_header(headers, 'Call-ID')
     if (status == 200):
-        params['peer_tag'] = get_tag(res[0], 'To:')
+        params['peer_tag'] = get_tag(headers, 'To:')
     while (status < 200):
         r = transport.recv_tcp(params)
         print("<=============recv")
         print(r.replace('\r\n', '\n'))
         res= parse_response(r)
-        status = get_status(res[0])
+        status = get_status(headers)
         print (status)
         if (status == 200):
-            params['peer_tag'] = get_tag(res[0], 'To:')
-    return (status, res[0], res[1])
+            params['peer_tag'] = get_tag(headers, 'To:')
+    return (status, headers, res[1])
 
 def send_ack(params):
     
