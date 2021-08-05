@@ -24,8 +24,8 @@ def recv_tcp(params):
 
 def server(params, handle):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((params['lh'], 5060))
-    print('listen {} 5060'.format(params['lh']))
+    s.bind((params['lh'], params['lp']))
+    print('listen {} {}'.format(params['lh'], params['lp']))
     s.listen(1)
     conn, addr = s.accept()
     print ('Connected by', addr)

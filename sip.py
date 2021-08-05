@@ -1,5 +1,6 @@
 import transport
 import uuid
+import datetime
 
 def response_sdp(params):
     
@@ -230,57 +231,58 @@ def get_header(headers, name):
 def send_invite(params):
    
     i = create_invite(params, sdp(params))
-    print("sent=============>")
-    print(i.replace('\r\n', '\n'))
+    log_sip_send(params, i)
     transport.open_socket(params)
     transport.send_tcp(params, i)
     
 def send_re_invite(params, sdp):
     
     i = create_re_invite(params, sdp)
-    print("sent=============>")
-    print(i.replace('\r\n', '\n'))
+    log_sip_send(params, i)
     transport.send_tcp(params, i)
     
 def get_invite_response(params):
     r = transport.recv_tcp(params)
-    print("<=============recv")
-    print(r.replace('\r\n', '\n'))
+    log_sip_recv(params, r)
     res= parse_response(r)
-    headers = res[0]
-    status = get_status(headers)
-    params['Call-ID'] = get_header(headers, 'Call-ID')
+    status = get_status(res[0])
+    params['Call-ID'] = get_header(res[0], "Call-ID")
     if (status == 200):
-        params['peer_tag'] = get_tag(headers, 'To:')
+        params['peer_tag'] = get_tag(res[0], 'To:')
     while (status < 200):
         r = transport.recv_tcp(params)
-        print("<=============recv")
-        print(r.replace('\r\n', '\n'))
+        log_sip_recv(params, r)
         res= parse_response(r)
-        status = get_status(headers)
+        status = get_status(res[0])
         print (status)
         if (status == 200):
-            params['peer_tag'] = get_tag(headers, 'To:')
-    return (status, headers, res[1])
+            params['peer_tag'] = get_tag(res[0], 'To:')
+    return (status, res[0], res[1])
 
 def send_ack(params):
     
     a = create_ack(params)
-    print("sent=============>")
-    print(a.replace('\r\n', '\n'))
+    log_sip_send(params, a)
     transport.send_tcp(params, a)
     
 def send_bye(params):
     
     b = create_bye(params)
-    print("sent======>")
-    print(b.replace('\r\n', '\n'))
+    log_sip_send(params, b)
     transport.send_tcp(params, b)
     r = transport.recv_tcp(params)
-    print("<=============recv")
-    print(r.replace('\r\n', '\n'))
+    log_sip_recv(params, r)
     transport.close_socket(params)
-    
+
+def log_sip_send(params, msg):
+    print("send {}".format(msg.split('\n')[0]))
+    if 'log_full' in params:
+        print(msg.replace('\r\n', '\n'))
+def log_sip_recv(params, msg):
+    print("recv {} {}".format(datetime.time(), msg.split('\n')[0]))
+    if 'log_full' in params:
+        print(msg.replace('\r\n', '\n'))
+     
 def create_re_invite(params, sdp):
     params['branch']='z9hG4bK{}'.format(uuid.uuid4())
     increment_seq(params)
@@ -317,7 +319,7 @@ Content-Length: {content_length}
     return text
 
 
-def create_invite_response(params, headers):
+def create_invite_response(params, headers, sdp):
     seq = int(get_header(headers, "CSeq").split()[1].strip())
     params['seq'] = seq
     params['branch'] = get_parameter(get_header(headers, "Via"), 'branch')
@@ -330,13 +332,15 @@ def create_invite_response(params, headers):
         params['local_tag']=uuid.uuid4()
     tag = ';tag={}'.format(params['local_tag'])
     params['To']="{}{}".format(get_header(headers, "To"), tag)
-    sdp = response_sdp(params)
+    
     text = '''SIP/2.0 200 OK
 Via: SIP/2.0/{transport} {lh}:{lp};branch={branch}
 {from_header}
 {to_header}
 {call_id_header}
 {cseq_header}
+Supported: tdialog,timer
+Session-Expires: 60;refresher=uac
 Contact: sip:test@{lh}:{lp}
 Content-Type: application/sdp
 Content-Length: {content_length}
@@ -355,6 +359,42 @@ Content-Length: {content_length}
 
     return text
 
+def create_update_response(params, headers):
+    seq = int(get_header(headers, "CSeq").split()[1].strip())
+    params['seq'] = seq
+    params['branch'] = get_parameter(get_header(headers, "Via"), 'branch')
+    params['local_tag'] = uuid.uuid4()
+    params['From']=get_header(headers, "From")
+    params['peer_tag'] = get_tag(headers, 'From:')
+    
+    params['Call-ID']=get_header(headers, "Call-ID")
+    if not 'local_tag' in params:
+        params['local_tag']=uuid.uuid4()
+    tag = ';tag={}'.format(params['local_tag'])
+    params['To']="{}{}".format(get_header(headers, "To"), tag)
+    
+    text = '''SIP/2.0 200 OK
+Via: SIP/2.0/{transport} {lh}:{lp};branch={branch}
+{from_header}
+{to_header}
+{call_id_header}
+{cseq_header}
+Supported: tdialog,timer
+Session-Expires: 120;refresher=uac
+Contact: sip:test@{lh}:{lp}
+Content-Length: 0
+
+'''.replace('\n', '\r\n').format(transport=params['transport'],
+                                           branch=params['branch'],
+                                           tag_param=tag,
+                                           lh=params['lh'],
+                                           lp=params['lp'],
+                                           from_header=params["From"],
+                                           to_header=params["To"],
+                                           call_id_header=params["Call-ID"],
+                                           cseq_header=get_header(headers, "CSeq"))
+
+    return text
 
 def create_bye_response(params, headers):
     seq = int(get_header(headers, "CSeq").split()[1].strip())
@@ -378,6 +418,7 @@ Via: SIP/2.0/{transport} {lh}:{lp};branch={branch}
 {cseq_header}
 Contact: sip:test@{lh}:{lp}
 Content-Length: 0
+
 '''.replace('\n', '\r\n').format(transport=params['transport'],
                                            branch=params['branch'],
                                            tag_param=tag,
@@ -392,4 +433,126 @@ Content-Length: 0
 
     return text
 
+def create_register_response(params, headers):
+    expires = 120
+    contact = get_header(headers, "Contact")
+    print("contact is {}".format(contact))
+    pos = contact.find('*')
+    if pos != -1:
+        expires = 0
+        contact = "User-Agent: test"
+        print("removing registration")
+    else:
+        pos = contact.find('expires')
+        if pos != -1:
+            contact = contact[:pos-1]
+            print("removing contact expires")
+    print("contact is now {}".format(contact))
+
+    seq = int(get_header(headers, "CSeq").split()[1].strip())
+    params['seq'] = seq
+    params['branch'] = get_parameter(get_header(headers, "Via"), 'branch')
+    params['local_tag'] = uuid.uuid4()
+    params['From']=get_header(headers, "From")
+    params['peer_tag'] = get_tag(headers, 'From:')
+    
+    params['Call-ID']=get_header(headers, "Call-ID")
+    if not 'local_tag' in params:
+        params['local_tag']=uuid.uuid4()
+    tag = ';tag={}'.format(params['local_tag'])
+    params['To']="{}{}".format(get_header(headers, "To"), tag)
+
+    text = '''SIP/2.0 200 OK
+Via: SIP/2.0/{transport} {lh}:{lp};branch={branch}
+{from_header}
+{to_header}
+{call_id_header}
+{cseq_header}
+{contact_header}
+Expires: {expires_time}
+Content-Length: 0
+
+'''.replace('\n', '\r\n').format(transport=params['transport'],
+                                           branch=params['branch'],
+                                           tag_param=tag,
+                                           lh=params['lh'],
+                                           lp=params['lp'],
+                                           from_header=params["From"],
+                                           to_header=params["To"],
+                                           call_id_header=params["Call-ID"],
+                                           cseq_header=get_header(headers, "CSeq"),
+                                           contact_header=contact,
+                                           expires_time=expires)
+
+    return text
+
+def create_500_response(params, headers):
+    seq = int(get_header(headers, "CSeq").split()[1].strip())
+    params['seq'] = seq
+    params['branch'] = get_parameter(get_header(headers, "Via"), 'branch')
+    params['local_tag'] = uuid.uuid4()
+    params['From']=get_header(headers, "From")
+    params['peer_tag'] = get_tag(headers, 'From:')
+    
+    params['Call-ID']=get_header(headers, "Call-ID")
+    if not 'local_tag' in params:
+        params['local_tag']=uuid.uuid4()
+    tag = ';tag={}'.format(params['local_tag'])
+    params['To']="{}{}".format(get_header(headers, "To"), tag)
+    sdp = response_sdp(params)
+    text = '''SIP/2.0 500 Internal Server Error
+Via: SIP/2.0/{transport} {lh}:{lp};branch={branch}
+{from_header}
+{to_header}
+{call_id_header}
+{cseq_header}
+Content-Length: 0
+
+'''.replace('\n', '\r\n').format(transport=params['transport'],
+                                           branch=params['branch'],
+                                           tag_param=tag,
+                                           lh=params['lh'],
+                                           lp=params['lp'],
+                                           from_header=params["From"],
+                                           to_header=params["To"],
+                                           call_id_header=params["Call-ID"],
+                                           cseq_header=get_header(headers, "CSeq"),
+                                           content_length=len(sdp),
+                                           sdp_text=sdp)
+
+    return text
+
+def create_100_response(params, headers):
+    seq = int(get_header(headers, "CSeq").split()[1].strip())
+    params['seq'] = seq
+    params['branch'] = get_parameter(get_header(headers, "Via"), 'branch')
+    params['local_tag'] = uuid.uuid4()
+    params['From']=get_header(headers, "From")
+    params['peer_tag'] = get_tag(headers, 'From:')
+    
+    params['Call-ID']=get_header(headers, "Call-ID")
+    if not 'local_tag' in params:
+        params['local_tag']=uuid.uuid4()
+    tag = ';tag={}'.format(params['local_tag'])
+    params['To']="{}{}".format(get_header(headers, "To"), tag)
+    sdp = response_sdp(params)
+    text = '''SIP/2.0 100 Trying
+Via: SIP/2.0/{transport} {lh}:{lp};branch={branch}
+{from_header}
+{to_header}
+{call_id_header}
+{cseq_header}
+Contact: sip:test@{lh}:{lp}
+Content-Length: 0
+'''.replace('\n', '\r\n').format(transport=params['transport'],
+                                           branch=params['branch'],
+                                           tag_param=tag,
+                                           lh=params['lh'],
+                                           lp=params['lp'],
+                                           from_header=params["From"],
+                                           to_header=params["To"],
+                                           call_id_header=params["Call-ID"],
+                                           cseq_header=get_header(headers, "CSeq"))
+
+    return text
     
