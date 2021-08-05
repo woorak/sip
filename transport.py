@@ -34,8 +34,17 @@ def server(params, handle):
         data = conn.recv(4096)
         if not data: 
             print ("no data")
-            break
+            continue
         res = handle(params, data.decode('utf-8'))
-        if res != '':
-            conn.sendall(res.encode())
+        try:
+            iterator = iter(res)
+        except TypeError:
+            # not iterable
+             if res != '':
+                conn.sendall(res.encode())
+        else:
+            for item in res:
+                conn.sendall(item.encode())
+
+       
     conn.close()

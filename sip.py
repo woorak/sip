@@ -279,7 +279,7 @@ def log_sip_send(params, msg):
     if 'log_full' in params:
         print(msg.replace('\r\n', '\n'))
 def log_sip_recv(params, msg):
-    print("recv {} {}".format(datetime.time(), msg.split('\n')[0]))
+    print("recv {} {}".format(datetime.datetime.now(), msg.split('\n')[0]))
     if 'log_full' in params:
         print(msg.replace('\r\n', '\n'))
      
@@ -529,24 +529,18 @@ def create_100_response(params, headers):
     params['local_tag'] = uuid.uuid4()
     params['From']=get_header(headers, "From")
     params['peer_tag'] = get_tag(headers, 'From:')
-    
+    params['To']="{}".format(get_header(headers, "To"))
     params['Call-ID']=get_header(headers, "Call-ID")
-    if not 'local_tag' in params:
-        params['local_tag']=uuid.uuid4()
-    tag = ';tag={}'.format(params['local_tag'])
-    params['To']="{}{}".format(get_header(headers, "To"), tag)
-    sdp = response_sdp(params)
     text = '''SIP/2.0 100 Trying
 Via: SIP/2.0/{transport} {lh}:{lp};branch={branch}
 {from_header}
 {to_header}
 {call_id_header}
 {cseq_header}
-Contact: sip:test@{lh}:{lp}
 Content-Length: 0
+
 '''.replace('\n', '\r\n').format(transport=params['transport'],
                                            branch=params['branch'],
-                                           tag_param=tag,
                                            lh=params['lh'],
                                            lp=params['lp'],
                                            from_header=params["From"],
